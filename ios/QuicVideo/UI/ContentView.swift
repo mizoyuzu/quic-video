@@ -34,6 +34,7 @@ struct ContentView: View {
                 .padding()
             }
             .navigationTitle("QUIC Video")
+            .onAppear { model.normalizeSelections() }
             .onChange(of: model.settings) { _, _ in model.saveSettings() }
         }
     }

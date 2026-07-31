@@ -30,6 +30,10 @@ final class AppModel: ObservableObject {
     init() {
         settings = settingsStore.load()
         discovery.start()
+        Task { @MainActor in
+            _ = await requestCameraPermission()
+            normalizeSelections()
+        }
         networkMonitor.pathUpdateHandler = { [weak self] path in
             let available = path.status == .satisfied
             Task { @MainActor in self?.wifiAvailable = available }
@@ -81,6 +85,16 @@ final class AppModel: ObservableObject {
         settingsStore.save(settings)
     }
 
+    func normalizeSelections() {
+        if !availableCodecs.contains(settings.codec) {
+            settings.codec = availableCodecs.first ?? .h264
+        }
+        if !availablePresets.contains(settings.preset) {
+            settings.preset = availablePresets.first ?? .hd30
+        }
+        saveSettings()
+    }
+
     func start() {
         guard !isRunning else { return }
         saveSettings()
@@ -117,7 +131,15 @@ final class AppModel: ObservableObject {
             }
 
             _ = try await logger.start(diagnostic: settings.diagnosticLogging)
-            let publisher = MoqPublisher(settings: settings, preset: settings.preset, codec: settings.codec, logger: logger)
+            let publisher = MoqPublisher(
+                settings: settings,
+                preset: settings.preset,
+                codec: settings.codec,
+                logger: logger,
+                onError: { [weak self] error in
+                    Task { @MainActor in await self?.recordError(error) }
+                }
+            )
             try await publisher.connect()
 
             let encoder = try VideoEncoder(preset: settings.preset, codec: settings.codec) { [weak publisher, weak self] result in

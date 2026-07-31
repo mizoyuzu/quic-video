@@ -31,6 +31,7 @@ final class MoqPublisher: @unchecked Sendable {
     private let preset: StreamPreset
     private let codec: StreamCodec
     private let logger: SessionLogger
+    private let onError: (Error) -> Void
     private let stateQueue = DispatchQueue(label: "net.nasno.quic-video.publisher.state")
     private let writeQueue = DispatchQueue(label: "net.nasno.quic-video.publisher.write", qos: .userInitiated)
     private let maxPendingFrames: Int
@@ -43,11 +44,18 @@ final class MoqPublisher: @unchecked Sendable {
     private var discardUntilKeyframe = false
     private var stopped = false
 
-    init(settings: AppSettings, preset: StreamPreset, codec: StreamCodec, logger: SessionLogger) {
+    init(
+        settings: AppSettings,
+        preset: StreamPreset,
+        codec: StreamCodec,
+        logger: SessionLogger,
+        onError: @escaping (Error) -> Void
+    ) {
         self.settings = settings
         self.preset = preset
         self.codec = codec
         self.logger = logger
+        self.onError = onError
         maxPendingFrames = max(2, preset.fps / 2)
     }
 
@@ -202,6 +210,7 @@ final class MoqPublisher: @unchecked Sendable {
                 }
             }
         } catch {
+            onError(error)
             Task {
                 if let sessionID = await logger.sessionID {
                     await logger.record(LogRecord(
