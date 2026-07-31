@@ -1,0 +1,19 @@
+[log]
+level = "info"
+
+[server]
+bind = "[::]:4443"
+
+[server.tls]
+cert = "mac/relay/relay.pem"
+key = "mac/relay/relay-key.pem"
+
+[server.quic]
+congestion_control = "delay"
+
+[auth]
+# This is intentionally anonymous for the initial closed-LAN experiment.
+public = ""
+
+[cache]
+duration = "2s"

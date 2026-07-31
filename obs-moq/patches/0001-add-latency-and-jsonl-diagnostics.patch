@@ -1,0 +1,165 @@
+diff --git a/cpp/obs/src/moq-source.cpp b/cpp/obs/src/moq-source.cpp
+index 5bf653b..6b01f07 100644
+--- a/cpp/obs/src/moq-source.cpp
++++ b/cpp/obs/src/moq-source.cpp
+@@ -7,7 +7,9 @@
+ 
+ #include <atomic>
+ #include <string>
++#include <cstdint>
+ #include <errno.h>
++#include <cstdio>
+ #include <time.h>
+ 
+ #ifdef _WIN32
+@@ -66,6 +68,10 @@ struct moq_source {
+ 	// Settings - current active connection settings
+ 	char *url;
+ 	char *broadcast;
++	uint64_t latency_max_ms;
++	char *jsonl_path;
++	FILE *jsonl_file;
++	uint64_t jsonl_sequence;
+
+ 	// Shutdown flag - set when destroy begins, callbacks should exit early
+ 	std::atomic<bool> shutting_down;
+@@ -153,6 +159,43 @@ struct broadcast_request {
+ };
+ } // namespace
+ 
++static uint64_t monotonic_us()
++{
++	struct timespec ts;
++	clock_gettime(CLOCK_MONOTONIC, &ts);
++	return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
++}
++
++static void jsonl_close(struct moq_source *ctx)
++{
++	if (ctx->jsonl_file) {
++		std::fflush(ctx->jsonl_file);
++		std::fclose(ctx->jsonl_file);
++		ctx->jsonl_file = nullptr;
++	}
++}
++
++static void jsonl_open(struct moq_source *ctx)
++{
++	jsonl_close(ctx);
++	if (ctx->jsonl_path && ctx->jsonl_path[0])
++		ctx->jsonl_file = std::fopen(ctx->jsonl_path, "ab");
++}
++
++static void jsonl_event(struct moq_source *ctx, const char *event, uint64_t pts_us, size_t payload_bytes,
++				 bool keyframe)
++{
++	if (!ctx->jsonl_file)
++		return;
++	std::fprintf(ctx->jsonl_file,
++		     "{\"schema_version\":1,\"role\":\"obs_subscriber\",\"event\":\"%s\","
++		     "\"monotonic_us\":%llu,\"media_pts_us\":%llu,\"payload_bytes\":%zu,"
++		     "\"keyframe\":%s,\"sequence\":%llu}\n",
++		     event, (unsigned long long)monotonic_us(), (unsigned long long)pts_us, payload_bytes,
++		     keyframe ? "true" : "false", (unsigned long long)ctx->jsonl_sequence++);
++	std::fflush(ctx->jsonl_file);
++}
++
+ // Forward declarations
+ static void moq_source_update(void *data, obs_data_t *settings);
+ static void moq_source_destroy(void *data);
+@@ -189,6 +232,10 @@ static void *moq_source_create(obs_data_t *settings, obs_source_t *source)
+ 	// Initialize handles to invalid values
+ 	ctx->generation = 0;
+ 	ctx->reconnect_in_progress = false;
++	ctx->latency_max_ms = 0;
++	ctx->jsonl_path = nullptr;
++	ctx->jsonl_file = nullptr;
++	ctx->jsonl_sequence = 0;
+ 	ctx->origin = -1;
+ 	ctx->session = -1;
+ 	ctx->request = -1;
+@@ -268,6 +315,8 @@ static void moq_source_destroy(void *data)
+ 
+ 	bfree(ctx->url);
+ 	bfree(ctx->broadcast);
++	bfree(ctx->jsonl_path);
++	jsonl_close(ctx);
+ 	// Note: frame_buffer is already freed by moq_source_disconnect_locked
+ 
+ 	pthread_cond_destroy(&ctx->refs_zero);
+@@ -308,6 +357,8 @@ static void moq_source_update(void *data, obs_data_t *settings)
+ 
+ 	const char *url = obs_data_get_string(settings, "url");
+ 	const char *broadcast = obs_data_get_string(settings, "broadcast");
++	const char *jsonl_path = obs_data_get_string(settings, "jsonl_path");
++	uint64_t latency_max_ms = (uint64_t)obs_data_get_int(settings, "latency_max_ms");
+
+ 	pthread_mutex_lock(&ctx->mutex);
+@@ -315,15 +366,25 @@ static void moq_source_update(void *data, obs_data_t *settings)
+ 	bool url_changed = (!ctx->url && url && strlen(url) > 0) || (ctx->url && !url) ||
+ 			   (ctx->url && url && strcmp(ctx->url, url) != 0);
+ 	bool broadcast_changed = (!ctx->broadcast && broadcast && strlen(broadcast) > 0) ||
+-				 (ctx->broadcast && !broadcast) ||
+-				 (ctx->broadcast && broadcast && strcmp(ctx->broadcast, broadcast) != 0);
+-	bool settings_changed = url_changed || broadcast_changed;
++					 (ctx->broadcast && !broadcast) ||
++					 (ctx->broadcast && broadcast && strcmp(ctx->broadcast, broadcast) != 0);
++	bool latency_changed = ctx->latency_max_ms != latency_max_ms;
++	bool jsonl_changed = (!ctx->jsonl_path && jsonl_path && strlen(jsonl_path) > 0) ||
++				     (ctx->jsonl_path && !jsonl_path) ||
++				     (ctx->jsonl_path && jsonl_path && strcmp(ctx->jsonl_path, jsonl_path) != 0);
++	bool settings_changed = url_changed || broadcast_changed || latency_changed;
+ 
+ 	// Store the new settings
+ 	bfree(ctx->url);
+ 	ctx->url = bstrdup(url);
+ 	bfree(ctx->broadcast);
+ 	ctx->broadcast = bstrdup(broadcast);
++	ctx->latency_max_ms = latency_max_ms;
++	if (jsonl_changed) {
++		bfree(ctx->jsonl_path);
++		ctx->jsonl_path = bstrdup(jsonl_path);
++		jsonl_open(ctx);
++	}
+ 
+ 	// Check if new settings are valid for connection
+ 	bool valid = ctx->url && ctx->broadcast && strlen(ctx->url) > 0 && strlen(ctx->broadcast) > 0;
+@@ -348,6 +409,8 @@ static void moq_source_get_defaults(obs_data_t *settings)
+ {
+ 	obs_data_set_default_string(settings, "url", "http://localhost:4443");
+ 	obs_data_set_default_string(settings, "broadcast", "obs/test");
++	obs_data_set_default_int(settings, "latency_max_ms", 0);
++	obs_data_set_default_string(settings, "jsonl_path", "");
+ }
+@@ -358,6 +421,8 @@ static obs_properties_t *moq_source_properties(void *data)
+ 	obs_properties_add_text(props, "url", "URL", OBS_TEXT_DEFAULT);
+ 	obs_properties_add_text(props, "broadcast", "Broadcast", OBS_TEXT_DEFAULT);
++	obs_properties_add_int(props, "latency_max_ms", "Max latency (ms)", 0, 200, 50);
++	obs_properties_add_path(props, "jsonl_path", "Diagnostic JSONL file", OBS_PATH_FILE, nullptr, nullptr);
+ 
+ 	return props;
+ }
+@@ -484,7 +549,7 @@ static void on_catalog(void *user_data, int32_t catalog)
+ 	// Subscribe to the video track (index 0). This takes the catalog snapshot,
+ 	// not the consume handle, and does not retain it - so free the snapshot
+ 	// immediately after.
+-	int32_t track = moq_consume_video(catalog, 0, 0, on_video_frame, ctx);
++	int32_t track = moq_consume_video(catalog, 0, ctx->latency_max_ms, on_video_frame, ctx);
+ 	moq_consume_catalog_free(catalog);
+ 	if (track < 0) {
+@@ -1049,6 +1114,7 @@ static void moq_source_decode_frame(struct moq_source *ctx, int32_t frame_id)
+ 		moq_consume_frame_free(frame_id);
+ 		return;
+ 	}
++	jsonl_event(ctx, "obs_receive", frame_data.timestamp_us, frame_data.payload_size, frame_data.keyframe);
+ 
+ 	// Skip non-keyframes until we get the first one
+ 	if (!ctx->got_keyframe && !frame_data.keyframe) {
+@@ -1249,6 +1315,7 @@ static void moq_source_decode_frame(struct moq_source *ctx, int32_t frame_id)
+ 	// delivers microseconds.
+ 	ctx->frame.timestamp = frame_data.timestamp_us * 1000;
+ 	obs_source_output_video(ctx->source, &ctx->frame);
++	jsonl_event(ctx, "obs_render", frame_data.timestamp_us, frame_data.payload_size, frame_data.keyframe);
+ 
+ 	av_frame_free(&frame);
+ 	pthread_mutex_unlock(&ctx->mutex);
