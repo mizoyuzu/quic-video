@@ -10,6 +10,14 @@ struct EncodedAccessUnit: Sendable {
     let initializationData: Data?
 }
 
+private final class EncoderFrameReference {
+    let frameID: UInt64
+
+    init(frameID: UInt64) {
+        self.frameID = frameID
+    }
+}
+
 enum VideoEncoderError: LocalizedError {
     case create(OSStatus)
     case property(String, OSStatus)
@@ -88,16 +96,19 @@ final class VideoEncoder {
         }
 
         var flags = VTEncodeInfoFlags()
+        let frameID = nextFrameID
+        let frameReference = Unmanaged.passRetained(EncoderFrameReference(frameID: frameID))
         let status = VTCompressionSessionEncodeFrame(
             session,
             imageBuffer: pixelBuffer,
             presentationTimeStamp: presentationTimeStamp,
             duration: preset.frameDuration,
             frameProperties: frameProperties as CFDictionary?,
-            sourceFrameRefcon: nil,
+            sourceFrameRefcon: frameReference.toOpaque(),
             infoFlagsOut: &flags
         )
         if status != noErr {
+            frameReference.release()
             output(.failure(VideoEncoderError.encode(status)))
         }
         nextFrameID &+= 1
@@ -165,7 +176,7 @@ final class VideoEncoder {
         guard status == noErr else { throw VideoEncoderError.property(name, status) }
     }
 
-    fileprivate func consume(sampleBuffer: CMSampleBuffer) {
+    fileprivate func consume(sampleBuffer: CMSampleBuffer, frameID: UInt64) {
         guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else {
             output(.failure(VideoEncoderError.emptyEncodedFrame))
             return
@@ -197,7 +208,7 @@ final class VideoEncoder {
         let initData = codecConfiguration(from: CMSampleBufferGetFormatDescription(sampleBuffer))
 
         let accessUnit = EncodedAccessUnit(
-            frameID: nextFrameID,
+            frameID: frameID,
             payload: payload,
             presentationTimeUs: UInt64(relative * 1_000_000),
             isKeyframe: isKeyframe,
@@ -234,6 +245,11 @@ private func videoCompressionOutputCallback(
 ) {
     guard let outputCallbackRefCon else { return }
     let encoder = Unmanaged<VideoEncoder>.fromOpaque(outputCallbackRefCon).takeUnretainedValue()
+    guard let sourceFrameRefCon else {
+        encoder.output(.failure(VideoEncoderError.emptyEncodedFrame))
+        return
+    }
+    let frameReference = Unmanaged<EncoderFrameReference>.fromOpaque(sourceFrameRefCon).takeRetainedValue()
     guard status == noErr else {
         encoder.output(.failure(VideoEncoderError.encode(status)))
         return
@@ -242,5 +258,5 @@ private func videoCompressionOutputCallback(
         encoder.output(.failure(VideoEncoderError.emptyEncodedFrame))
         return
     }
-    encoder.consume(sampleBuffer: sampleBuffer)
+    encoder.consume(sampleBuffer: sampleBuffer, frameID: frameReference.frameID)
 }
