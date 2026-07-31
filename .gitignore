@@ -1,0 +1,14 @@
+.DS_Store
+
+# Xcode output and per-user state
+DerivedData/
+ios/QuicVideo.xcodeproj/xcuserdata/
+ios/QuicVideo.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Local relay credentials and generated certificates
+mac/relay/*.pem
+mac/relay/*.key
+
+# Local logs and qlog files
+*.jsonl
+*.qlog

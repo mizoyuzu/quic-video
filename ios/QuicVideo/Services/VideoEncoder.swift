@@ -79,7 +79,13 @@ final class VideoEncoder {
             throw VideoEncoderError.create(status)
         }
         session = created
-        try configure(created)
+        do {
+            try configure(created)
+        } catch {
+            VTCompressionSessionInvalidate(created)
+            session = nil
+            throw error
+        }
     }
 
     deinit {
