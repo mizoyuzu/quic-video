@@ -19,6 +19,9 @@ struct ContentView: View {
                     relaySection
                     streamSection
                     controls
+                    Text(model.wifiAvailable ? "Wi-Fi: 接続済み" : "Wi-Fi: 未接続")
+                        .font(.caption)
+                        .foregroundStyle(model.wifiAvailable ? .green : .secondary)
                     statsSection
 
                     if let errorMessage = model.errorMessage {

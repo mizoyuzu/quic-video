@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var status = "停止中"
     @Published private(set) var errorMessage: String?
     @Published private(set) var isRunning = false
+    @Published private(set) var wifiAvailable = false
     @Published private(set) var stats = PublisherStats(rttUs: nil, sendRateBps: nil, bytesSent: nil, bytesLost: nil, packetsLost: nil, queueDepth: 0)
     @Published private(set) var previewSession: AVCaptureSession?
 
@@ -23,10 +24,17 @@ final class AppModel: ObservableObject {
     private var statsTask: Task<Void, Never>?
     private var resumeAfterBackground = false
     private var observers: [NSObjectProtocol] = []
+    private let networkMonitor = NWPathMonitor(requiredInterfaceType: .wifi)
+    private let networkQueue = DispatchQueue(label: "net.nasno.quic-video.network")
 
     init() {
         settings = settingsStore.load()
         discovery.start()
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            let available = path.status == .satisfied
+            Task { @MainActor in self?.wifiAvailable = available }
+        }
+        networkMonitor.start(queue: networkQueue)
         observers = [
             NotificationCenter.default.addObserver(
                 forName: UIApplication.didEnterBackgroundNotification,
@@ -48,6 +56,7 @@ final class AppModel: ObservableObject {
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
         discovery.stop()
+        networkMonitor.cancel()
     }
 
     var availableCodecs: [StreamCodec] {
@@ -102,6 +111,9 @@ final class AppModel: ObservableObject {
             }
             guard let _ = settings.relayURL else {
                 throw AppModelError.relayMissing
+            }
+            guard wifiAvailable else {
+                throw AppModelError.wifiUnavailable
             }
 
             _ = try await logger.start(diagnostic: settings.diagnosticLogging)
@@ -230,6 +242,7 @@ enum AppModelError: LocalizedError {
     case presetUnavailable
     case codecUnavailable
     case relayMissing
+    case wifiUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -237,6 +250,7 @@ enum AppModelError: LocalizedError {
         case .presetUnavailable: return "この端末では選択したプリセットを利用できません"
         case .codecUnavailable: return "この端末では選択したcodecのhardware encoderを利用できません"
         case .relayMissing: return "relayの接続先が未設定です"
+        case .wifiUnavailable: return "Wi-Fi接続が確認できないため開始できません"
         }
     }
 }
