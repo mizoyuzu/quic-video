@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QUIC Video Viewer</title>
+    <script type="module">
+      import "https://esm.sh/@moq/watch@0.2/element";
+      import "https://esm.sh/@moq/watch@0.2/ui";
+
+      const form = document.querySelector("#connect-form");
+      const relayInput = document.querySelector("#relay");
+      const nameInput = document.querySelector("#broadcast");
+      const viewer = document.querySelector("#watch");
+      const status = document.querySelector("#status");
+      const player = document.querySelector("#player");
+      const params = new URLSearchParams(window.location.search);
+
+      relayInput.value = params.get("relay") || localStorage.getItem("quic-video.relay") || "https://localhost:4443";
+      nameInput.value = params.get("name") || localStorage.getItem("quic-video.broadcast") || "";
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const relay = relayInput.value.trim();
+        const broadcast = nameInput.value.trim();
+
+        if (!relay || !broadcast) {
+          status.textContent = "Relay URLとBroadcast pathを入力してください。";
+          status.dataset.type = "error";
+          return;
+        }
+
+        try {
+          new URL(relay);
+        } catch {
+          status.textContent = "Relay URLの形式が正しくありません。例: https://localhost:4443";
+          status.dataset.type = "error";
+          return;
+        }
+
+        localStorage.setItem("quic-video.relay", relay);
+        localStorage.setItem("quic-video.broadcast", broadcast);
+        viewer.url = relay;
+        viewer.name = broadcast;
+        viewer.setAttribute("visible", "always");
+        viewer.removeAttribute("paused");
+        player.hidden = false;
+        status.textContent = "接続中... 映像が表示されるまで数秒かかることがあります。";
+        status.dataset.type = "info";
+      });
+
+      if (params.has("relay") && params.has("name")) {
+        form.requestSubmit();
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #111315;
+        color: #f4f5f6;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top right, #203235, #111315 48%);
+      }
+
+      main {
+        width: min(100% - 32px, 1000px);
+        margin: 0 auto;
+        padding: 42px 0 64px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(28px, 5vw, 46px);
+        letter-spacing: -0.04em;
+      }
+
+      .lead {
+        margin: 0 0 28px;
+        color: #aeb8ba;
+      }
+
+      .panel {
+        padding: 20px;
+        border: 1px solid #354347;
+        border-radius: 18px;
+        background: rgba(20, 25, 27, 0.9);
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.25);
+      }
+
+      form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        color: #aeb8ba;
+        font-size: 13px;
+      }
+
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 11px 12px;
+        border: 1px solid #46575b;
+        border-radius: 9px;
+        background: #0d1011;
+        color: #fff;
+        font: inherit;
+      }
+
+      input:focus {
+        outline: 2px solid #64c7b8;
+        outline-offset: 1px;
+      }
+
+      button {
+        padding: 11px 18px;
+        border: 0;
+        border-radius: 9px;
+        background: #64c7b8;
+        color: #071211;
+        cursor: pointer;
+        font: 600 14px inherit;
+      }
+
+      #status {
+        min-height: 1.3em;
+        margin: 14px 0 0;
+        color: #aeb8ba;
+        font-size: 13px;
+      }
+
+      #status[data-type="error"] {
+        color: #ff9b91;
+      }
+
+      #player {
+        margin-top: 18px;
+        overflow: hidden;
+        border: 1px solid #354347;
+        border-radius: 18px;
+        background: #050606;
+      }
+
+      moq-watch {
+        display: block;
+        aspect-ratio: 16 / 9;
+      }
+
+      moq-watch canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .hint {
+        margin: 18px 2px 0;
+        color: #7f8b8d;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      code {
+        color: #c9ece7;
+      }
+
+      @media (max-width: 700px) {
+        main {
+          width: min(100% - 20px, 1000px);
+          padding-top: 24px;
+        }
+
+        form {
+          grid-template-columns: 1fr;
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>QUIC Video</h1>
+      <p class="lead">iPhoneから配信中の映像をブラウザで見る</p>
+
+      <section class="panel">
+        <form id="connect-form">
+          <label>
+            Relay URL
+            <input id="relay" type="url" placeholder="https://localhost:4443" required />
+          </label>
+          <label>
+            Broadcast path
+            <input id="broadcast" type="text" placeholder="quic-video/iphone-name-xxxxxxxx" required />
+          </label>
+          <button type="submit">接続</button>
+        </form>
+        <p id="status" role="status">Relay URLとBroadcast pathを入力して接続してください。</p>
+      </section>
+
+      <section id="player" hidden>
+        <moq-watch-ui>
+          <moq-watch id="watch" muted="false" latency="real-time">
+            <canvas></canvas>
+          </moq-watch>
+        </moq-watch-ui>
+      </section>
+
+      <p class="hint">
+        ChromeまたはEdgeで開いてください。初回はMacのrelay証明書を信頼する必要があります。
+        URLに<code>?relay=...&amp;name=...</code>を付けると入力を省略できます。
+      </p>
+    </main>
+  </body>
+</html>
