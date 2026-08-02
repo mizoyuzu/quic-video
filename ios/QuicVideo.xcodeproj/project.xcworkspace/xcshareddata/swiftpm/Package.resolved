@@ -1,0 +1,24 @@
+{
+  "originHash" : "bb6fd76cf16096bce9cc6162cfdbb1da09d026c2a0cc962081da2715edee5a6f",
+  "pins" : [
+    {
+      "identity" : "moq-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/moq-dev/moq-swift",
+      "state" : {
+        "revision" : "21bda2642005647d9184bd6c03def36f27f2024f",
+        "version" : "0.4.1"
+      }
+    },
+    {
+      "identity" : "moq-swift-ffi",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/moq-dev/moq-swift-ffi",
+      "state" : {
+        "revision" : "f18e5caa9ddf48a2c110df2b617e7a3aa494fbb7",
+        "version" : "0.3.5"
+      }
+    }
+  ],
+  "version" : 3
+}
