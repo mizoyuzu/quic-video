@@ -30,7 +30,19 @@ enum StreamCodec: String, CaseIterable, Codable, Identifiable {
     }
 
     var hardwareSupported: Bool {
-        VTIsHardwareEncodeSupported(codecType)
+        var encoderList: CFArray?
+        guard VTCopyVideoEncoderList(nil, &encoderList) == noErr,
+              let encoders = encoderList as? [[String: Any]] else {
+            return false
+        }
+
+        return encoders.contains { encoder in
+            guard let encoderCodecType = encoder[kVTVideoEncoderList_CodecType as String] as? NSNumber,
+                  let isHardwareAccelerated = encoder[kVTVideoEncoderList_IsHardwareAccelerated as String] as? NSNumber else {
+                return false
+            }
+            return encoderCodecType.uint32Value == codecType && isHardwareAccelerated.boolValue
+        }
     }
 }
 
