@@ -211,12 +211,12 @@ final class AppModel: ObservableObject {
                     await self.logger.record(LogRecord(
                         sessionID: sessionID,
                         event: "stats",
+                        queueDepth: next.queueDepth,
                         rttUs: next.rttUs,
                         sendRateBps: next.sendRateBps,
                         bytesSent: next.bytesSent,
                         bytesLost: next.bytesLost,
-                        packetsLost: next.packetsLost,
-                        queueDepth: next.queueDepth
+                        packetsLost: next.packetsLost
                     ))
                 }
             }
