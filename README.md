@@ -21,6 +21,19 @@ iOS 18+端末のカメラ映像を、LAN/Wi-Fi環境でMedia over QUIC (MoQ)に�
 - `mac/relay`: `moq-relay`のLAN実験設定とmkcert手順
 - `mac/BonjourAdvertiser`: relayをBonjourで発見するためのmacOS補助サービス
 - `obs-moq`: upstreamの`obs-moq`へ遅延設定と診断JSONLを追加するpatch
+- `web`: `@moq/watch`を使ったブラウザ受信画面
+
+## ブラウザで見る
+
+Mac上でrelayを起動した後、別のターミナルで次を実行します。
+
+```bash
+./web/start.sh
+```
+
+ChromeまたはEdgeで <http://localhost:8080> を開き、iOSアプリの
+`Broadcast path`とrelay URL（通常は`https://localhost:4443`）を入力します。
+初回は先に`./mac/relay/setup-cert.sh`を実行して、relayの証明書をMacで信頼してください。
 
 VideoToolboxの出力はAVCC/HVCCのlength-prefixed access unitなので、MoQのsingle-codec
 media formatには`avc1`/`hvc1`を使います。`avc3`/`hev1`のAnnex-B経路は初期実装の対象外です。
