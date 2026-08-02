@@ -11,6 +11,8 @@
       const form = document.querySelector("#connect-form");
       const relayInput = document.querySelector("#relay");
       const nameInput = document.querySelector("#broadcast");
+      const broadcastList = document.querySelector("#broadcast-list");
+      const refreshButton = document.querySelector("#refresh-broadcasts");
       const viewer = document.querySelector("#watch");
       const status = document.querySelector("#status");
       const player = document.querySelector("#player");
@@ -18,6 +20,27 @@
 
       relayInput.value = params.get("relay") || localStorage.getItem("quic-video.relay") || "https://localhost:4443";
       nameInput.value = params.get("name") || localStorage.getItem("quic-video.broadcast") || "";
+
+      async function refreshBroadcasts() {
+        const relay = relayInput.value.trim();
+        if (!relay) return;
+
+        try {
+          const url = new URL("/announced", relay);
+          const response = await fetch(url, { cache: "no-store" });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const paths = (await response.text()).split("\n").map((path) => path.trim()).filter(Boolean);
+
+          broadcastList.replaceChildren(new Option("配信を選択してください", ""));
+          for (const path of paths) broadcastList.add(new Option(path, path));
+          if (paths.includes(nameInput.value)) broadcastList.value = nameInput.value;
+          status.textContent = paths.length ? `${paths.length}件の配信を検出しました。` : "配信中の映像がありません。";
+          status.dataset.type = "info";
+        } catch (error) {
+          status.textContent = `配信一覧を取得できません: ${error.message}`;
+          status.dataset.type = "error";
+        }
+      }
 
       form.addEventListener("submit", (event) => {
         event.preventDefault();
@@ -47,6 +70,13 @@
         player.hidden = false;
         status.textContent = "接続中... 映像が表示されるまで数秒かかることがあります。";
         status.dataset.type = "info";
+      });
+
+      refreshButton.addEventListener("click", refreshBroadcasts);
+      broadcastList.addEventListener("change", () => {
+        if (!broadcastList.value) return;
+        nameInput.value = broadcastList.value;
+        form.requestSubmit();
       });
 
       if (params.has("relay") && params.has("name")) {
@@ -99,6 +129,13 @@
         align-items: end;
       }
 
+      .discovery {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        margin-top: 14px;
+      }
+
       label {
         display: grid;
         gap: 7px;
@@ -120,6 +157,17 @@
       input:focus {
         outline: 2px solid #64c7b8;
         outline-offset: 1px;
+      }
+
+      select {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 11px 12px;
+        border: 1px solid #46575b;
+        border-radius: 9px;
+        background: #0d1011;
+        color: #fff;
+        font: inherit;
       }
 
       button {
@@ -184,6 +232,10 @@
           grid-template-columns: 1fr;
         }
 
+        .discovery {
+          grid-template-columns: 1fr;
+        }
+
         button {
           width: 100%;
         }
@@ -208,6 +260,12 @@
           <button type="submit">接続</button>
         </form>
         <p id="status" role="status">Relay URLとBroadcast pathを入力して接続してください。</p>
+        <div class="discovery">
+          <select id="broadcast-list" aria-label="配信中のBroadcast path">
+            <option value="">配信一覧を取得してください</option>
+          </select>
+          <button id="refresh-broadcasts" type="button">一覧を更新</button>
+        </div>
       </section>
 
       <section id="player" hidden>
