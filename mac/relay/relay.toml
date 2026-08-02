@@ -8,6 +8,12 @@ bind = "[::]:4443"
 cert = "mac/relay/relay.pem"
 key = "mac/relay/relay-key.pem"
 
+[web.https]
+# Serve HTTPS/WSS on TCP 4443 for browser fallback and discovery.
+listen = "[::]:4443"
+cert = "mac/relay/relay.pem"
+key = "mac/relay/relay-key.pem"
+
 [server.quic]
 congestion_control = "delay"
 
